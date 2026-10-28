@@ -1,0 +1,35 @@
+{
+  "name": "bot-ventas",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bot de Discord para registrar ventas y cobros de un servidor de rol.",
+  "type": "module",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "prisma generate && tsc",
+    "start": "node dist/index.js",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:validate": "prisma validate",
+    "test": "tsx --test --test-concurrency=1 src/services/money.test.ts src/services/sale-parser.test.ts src/services/resolve-sale.test.ts src/services/sale-text.test.ts src/services/notification-claim.test.ts src/services/deliver-confirmation.test.ts src/services/week-period.test.ts src/services/payments.test.ts src/services/department.test.ts src/services/sales.integration.test.ts src/services/accounting.integration.test.ts src/discord/command-place.test.ts src/discord/sale-flow.test.ts src/discord/access.test.ts src/discord/register-commands.test.ts",
+    "postinstall": "prisma generate"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "7.10.1",
+    "@prisma/client": "7.10.1",
+    "discord.js": "14.27.0",
+    "dotenv": "18.0.9",
+    "pg": "8.23.1",
+    "prisma": "7.10.1"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "@types/pg": "8.23.1",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2"
+  }
+}

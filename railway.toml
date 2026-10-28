@@ -1,0 +1,10 @@
+[build]
+builder = "RAILPACK"
+buildCommand = "npm run build"
+
+[deploy]
+preDeployCommand = ["npm run db:migrate:deploy"]
+startCommand = "npm start"
+numReplicas = 1
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

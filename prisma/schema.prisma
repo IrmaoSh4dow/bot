@@ -1,0 +1,195 @@
+// Los importes usan DECIMAL y no tipos de punto flotante.
+// El precio vigente está en Product. Cada artículo vendido conserva el suyo.
+// Las ventas se crean con /venta. operation_id identifica la interacción y
+// evita un segundo registro si Discord reintenta la confirmación.
+// El departamento paga el saldo global. Un pago nuevo no se asigna a un agente.
+// El resumen semanal no marca el periodo como pagado.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum PendingReviewStatus {
+  pending
+  resolved
+  dismissed
+
+  @@map("pending_review_status")
+}
+
+enum PaymentMode {
+  total
+  partial
+
+  @@map("payment_mode")
+}
+
+model Product {
+  id             String     @id @default(cuid())
+  name           String     @unique
+  normalizedName String     @unique @map("normalized_name")
+  unitPrice      Decimal?   @map("unit_price") @db.Decimal(12, 2)
+  active         Boolean    @default(true)
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  saleItems      SaleItem[]
+
+  @@map("products")
+}
+
+model Agent {
+  id              String                 @id @default(cuid())
+  badgeNumber     String                 @unique @map("badge_number")
+  discordThreadId String                 @unique @map("discord_thread_id")
+  displayName     String?                @map("display_name")
+  active          Boolean                @default(true)
+  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+  sales           Sale[]
+  drafts          SaleDraft[]
+  payments        Payment[]
+  pendingReviews  PendingReviewMessage[]
+
+  @@map("agents")
+}
+
+// Fila única para serializar los pagos del departamento.
+model DepartmentAccount {
+  id        String   @id
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@map("department_accounts")
+}
+
+// Semana de lunes 00:00 a lunes siguiente, en la zona horaria guardada.
+// Publicar el resumen no marca el periodo como pagado.
+model BillingPeriod {
+  id                    String    @id @default(cuid())
+  startsAt              DateTime  @unique @map("starts_at") @db.Timestamptz(3)
+  endsAt                DateTime  @map("ends_at") @db.Timestamptz(3)
+  timeZone              String    @map("time_zone")
+  summaryMessageId      String?   @unique @map("summary_message_id")
+  summaryChannelId      String?   @map("summary_channel_id")
+  notificationClaimedAt DateTime? @map("notification_claimed_at") @db.Timestamptz(3)
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  payments              Payment[]
+
+  @@map("billing_periods")
+}
+
+model SaleDraft {
+  operationId      String   @id @map("operation_id")
+  agentId          String   @map("agent_id")
+  agent            Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  discordThreadId  String   @map("discord_thread_id")
+  discordAuthorId  String   @map("discord_author_id")
+  authorName       String   @map("author_name")
+  rawContent       String   @map("raw_content")
+  lines            Json
+  totalAmount      Decimal  @map("total_amount") @db.Decimal(12, 2)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt        DateTime @map("expires_at") @db.Timestamptz(3)
+
+  @@index([agentId])
+  @@map("sale_drafts")
+}
+
+model Sale {
+  id                    String     @id @default(cuid())
+  operationId           String     @unique @map("operation_id")
+  agentId               String     @map("agent_id")
+  agent                 Agent      @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  discordThreadId       String     @map("discord_thread_id")
+  discordAuthorId       String     @map("discord_author_id")
+  authorName            String     @map("author_name")
+  rawContent            String     @map("raw_content")
+  totalAmount           Decimal    @map("total_amount") @db.Decimal(12, 2)
+  soldAt                DateTime   @map("sold_at") @db.Timestamptz(3)
+  createdAt             DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  confirmationMessageId String?    @unique @map("confirmation_message_id")
+  notificationClaimedAt DateTime?  @map("notification_claimed_at") @db.Timestamptz(3)
+  items                 SaleItem[]
+
+  @@index([agentId])
+  @@index([soldAt])
+  @@map("sales")
+}
+
+model SaleItem {
+  id          String  @id @default(cuid())
+  saleId      String  @map("sale_id")
+  sale        Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  position    Int
+  productId   String  @map("product_id")
+  product     Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  productName String  @map("product_name")
+  quantity    Int
+  unitPrice   Decimal @map("unit_price") @db.Decimal(12, 2)
+  lineTotal   Decimal @map("line_total") @db.Decimal(12, 2)
+
+  @@unique([saleId, position])
+  @@index([productId])
+  @@map("sale_items")
+}
+
+model PaymentDraft {
+  operationId      String      @id @map("operation_id")
+  discordAuthorId  String      @map("discord_author_id")
+  authorName       String      @map("author_name")
+  mode             PaymentMode
+  amount           Decimal     @db.Decimal(12, 2)
+  previousBalance  Decimal     @map("previous_balance") @db.Decimal(12, 2)
+  remainingBalance Decimal     @map("remaining_balance") @db.Decimal(12, 2)
+  periodStartsAt   DateTime    @map("period_starts_at") @db.Timestamptz(3)
+  createdAt        DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt        DateTime    @map("expires_at") @db.Timestamptz(3)
+
+  @@map("payment_drafts")
+}
+
+model Payment {
+  id               String        @id @default(cuid())
+  operationId      String        @unique @map("operation_id")
+  agentId          String?       @map("agent_id")
+  agent            Agent?        @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  periodId         String?       @map("period_id")
+  period           BillingPeriod? @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  mode             PaymentMode
+  amount           Decimal       @db.Decimal(12, 2)
+  previousBalance  Decimal?      @map("previous_balance") @db.Decimal(12, 2)
+  remainingBalance Decimal?      @map("remaining_balance") @db.Decimal(12, 2)
+  paidAt           DateTime      @map("paid_at") @db.Timestamptz(3)
+  discordAuthorId  String?       @map("discord_author_id")
+  authorName       String?       @map("author_name")
+  note             String?
+  discordMessageId String?       @unique @map("discord_message_id")
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([agentId])
+  @@index([periodId])
+  @@index([paidAt])
+  @@map("payments")
+}
+
+model PendingReviewMessage {
+  id               String              @id @default(cuid())
+  discordMessageId String              @unique @map("discord_message_id")
+  discordThreadId  String              @map("discord_thread_id")
+  discordAuthorId  String              @map("discord_author_id")
+  agentId          String?             @map("agent_id")
+  agent            Agent?              @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  rawContent       String              @map("raw_content")
+  reason           String
+  status           PendingReviewStatus @default(pending)
+  createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  resolvedAt       DateTime?           @map("resolved_at") @db.Timestamptz(3)
+
+  @@index([status, createdAt])
+  @@index([agentId])
+  @@map("pending_review_messages")
+}

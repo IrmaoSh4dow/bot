@@ -141,13 +141,12 @@ El domingo, a la hora de `DEPARTMENT_TIMEZONE`, el proceso publica el resumen en
 `railway.toml` define un solo proceso:
 
 - compilación: `npm run build` (`prisma generate` y `tsc`)
-- antes de arrancar: `npm run db:migrate:deploy`
 - inicio: `npm start` (`node dist/index.js`)
 - una réplica y reinicio solo si el proceso falla
 
-Si la migración termina con error, Prisma devuelve un código distinto de cero y Railway no arranca el bot. El bot tampoco abre un puerto HTTP: no configures un healthcheck.
+Al arrancar, el proceso consulta si `public` ya tiene tablas. Si no hay ninguna, ejecuta `prisma migrate deploy` y solo después abre la sesión de Discord. Si ya hay tablas, no vuelve a ejecutar las migraciones. Una migración que termina con error cierra el proceso con código distinto de cero y el bot no se conecta. El bot tampoco abre un puerto HTTP: no configures un healthcheck ni un comando previo al arranque.
 
-Railway deja de leer `railway.toml` en servicios nuevos y, desde el 1 de diciembre de 2026, también en los antiguos. Si el panel no toma el archivo, escribe los tres comandos a mano: build `npm run build`, pre-deploy `npm run db:migrate:deploy`, start `npm start`.
+Railway deja de leer `railway.toml` en servicios nuevos y, desde el 1 de diciembre de 2026, también en los antiguos. Si el panel no toma el archivo, escribe a mano: build `npm run build`, start `npm start`. Deja vacío el comando previo al arranque.
 
 `package-lock.json` fija las dependencias. `prisma` está en las dependencias de producción para que la migración pueda ejecutarse en la imagen. `src/generated/` y `dist/` no se versionan: el build los crea en el contenedor. La base vive en PostgreSQL, no en archivos locales del contenedor.
 
@@ -157,8 +156,8 @@ Pasos, cuando autorices la publicación:
 2. En Railway, crea un proyecto desde ese repositorio.
 3. Añade PostgreSQL y referencia su `DATABASE_URL` en el servicio del bot.
 4. Define `DISCORD_TOKEN`. Añade el resto de variables solo si quieres cambiar el valor predeterminado.
-5. Confirma que el pre-deploy es `npm run db:migrate:deploy` y que no hay healthcheck.
-6. Despliega. El primer arranque aplica las tres migraciones a la base vacía.
+5. Confirma que no hay comando previo al arranque ni healthcheck. El proceso aplica las migraciones solo si la base está vacía.
+6. Despliega. El primer arranque aplica las tres migraciones. Los siguientes ven las tablas y no las vuelven a crear.
 
 No ejecutes `migrate reset` ni borres las migraciones ya versionadas.
 
@@ -169,7 +168,7 @@ No ejecutes `migrate reset` ni borres las migraciones ya versionadas.
 | Faltan variables de entorno | `DISCORD_TOKEN` y `DATABASE_URL` en `.env` o en Railway |
 | Token inválido | Genera otro token en el portal y sustituye el anterior. El registro solo dice que el token no es válido |
 | No se pudo conectar a PostgreSQL | La cadena, el host y que la base exista. El mensaje no imprime la URL |
-| La base no tiene las migraciones | `npm run db:migrate:deploy`. En Railway, el pre-deploy tiene que haber terminado bien |
+| La base no tiene las migraciones | La base estaba vacía y la migración automática falló, o ya había tablas ajenas al bot. Revisa el registro del arranque |
 | No aparece `/venta` | Con `DISCORD_GUILD_ID`, reinicia el bot. Sin él, el registro global puede tardar una hora |
 | Comandos duplicados | Hay una copia global y otra del servidor. Conserva un solo ámbito |
 | Missing Permissions o `50013` | Ver canales, Enviar mensajes y Enviar mensajes en hilos, en el foro y en el canal del resumen |
@@ -189,7 +188,7 @@ src/
   index.ts               Arranque, cierre y errores
   config/env.ts          Validación de variables
   discord/               Cliente, comandos y resumen dominical
-  database/client.ts     Cliente de Prisma
+  database/              Conexión y migraciones del primer arranque
   services/              Catálogo, ventas, agentes, saldo y periodos
 railway.toml
 ```

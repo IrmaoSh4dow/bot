@@ -1,7 +1,8 @@
 import "dotenv/config";
 import { Client, Events } from "discord.js";
 import { loadConfig } from "./config/env.js";
-import { connectDatabase, disconnectDatabase } from "./database/client.js";
+import { assertSchemaReady, connectDatabase, disconnectDatabase } from "./database/client.js";
+import { applyMigrationsIfEmpty } from "./database/migrate.js";
 import { createDiscordClient } from "./discord/client.js";
 import { registerAgentHandlers } from "./discord/agente.js";
 import { registerCollectionHandlers } from "./discord/cobro.js";
@@ -33,7 +34,16 @@ async function main(): Promise<void> {
     console.log("FORUM_CHANNEL_ID no está definido. /venta exige un hilo asociado a un agente.");
   }
 
-  await connectDatabase(config.databaseUrl);
+  await connectDatabase(config.databaseUrl, { requireSchema: false });
+  await applyMigrationsIfEmpty();
+
+  try {
+    await assertSchemaReady();
+  } catch (error) {
+    await disconnectDatabase();
+    throw error;
+  }
+
   console.log("Conectado a PostgreSQL.");
 
   const client = createDiscordClient();

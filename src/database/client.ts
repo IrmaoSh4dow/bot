@@ -11,7 +11,10 @@ export function getPrismaClient(): PrismaClient {
   return prisma;
 }
 
-export async function connectDatabase(connectionString: string): Promise<void> {
+export async function connectDatabase(
+  connectionString: string,
+  options?: { requireSchema?: boolean },
+): Promise<void> {
   if (prisma) {
     return;
   }
@@ -34,6 +37,10 @@ export async function connectDatabase(connectionString: string): Promise<void> {
   }
 
   prisma = client;
+
+  if (options?.requireSchema === false) {
+    return;
+  }
 
   try {
     await assertSchemaReady();
